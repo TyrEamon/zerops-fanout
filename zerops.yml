@@ -18,7 +18,7 @@ zerops:
       start: |
         docker rm -f fanout 2>/dev/null || true
         docker volume create fanout-data >/dev/null
-        exec docker run --name fanout \
+        docker run -d --name fanout \
           --privileged \
           --network=host \
           -v fanout-data:/var/lib/fanout \
@@ -27,6 +27,7 @@ zerops:
           -e WORK_DIR=/var/lib/fanout \
           -e MAX_SLOTS=20 \
           alpine:3.20 sh -eux -c 'id; uname -a; ls -la /app; apk add --no-cache bash ca-certificates curl iproute2 iptables openvpn; cp /app/fanout /usr/local/bin/fanout; cp /app/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh; chmod +x /usr/local/bin/fanout /usr/local/bin/docker-entrypoint.sh; /usr/local/bin/fanout -version; exec /usr/local/bin/docker-entrypoint.sh'
+        exec docker logs -f fanout
       ports:
         - port: 8899
           httpSupport: true

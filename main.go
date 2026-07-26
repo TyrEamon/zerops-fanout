@@ -98,7 +98,7 @@ func main() {
 
 	addr := fmt.Sprintf(":%d", *webPort)
 	log.Printf("管理界面: http://<本机IP>%s%s/", addr, basePath)
-	log.Printf("SOCKS5 端口在 %d-%d 之间随机分配", randPortMin, randPortMax)
+	log.Printf("SOCKS5 端口在 %d-%d 之间随机分配", randPortMin, randPortMax-1)
 	if err := http.ListenAndServe(addr, StripBasePath(basePath, auth.Wrap(mux))); err != nil {
 		log.Fatal(err)
 	}

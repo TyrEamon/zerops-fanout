@@ -2,7 +2,7 @@
 
 This repository packages [byJoey/fanout](https://github.com/byJoey/fanout) for Zerops Docker service.
 
-It does not build a Docker image on your local computer. Zerops runs `docker build` remotely during deployment.
+It does not build a Docker image on your local computer. Zerops compiles the Go binary remotely, then runs it inside a privileged Alpine Docker container.
 
 ## Zerops
 

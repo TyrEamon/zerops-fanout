@@ -1,10 +1,20 @@
 zerops:
   - setup: fanout
+    build:
+      base: go@1.22
+      envVariables:
+        GOPROXY: https://goproxy.cn,direct
+        CGO_ENABLED: "0"
+      buildCommands:
+        - go mod download
+        - go build -trimpath -ldflags "-s -w -X main.version=zerops-docker" -o fanout .
+      deployFiles:
+        - fanout
+        - docker-entrypoint.sh
     run:
       base: alpine/docker@26.1.5
       prepareCommands:
-        - docker build --pull -t fanout-zerops:latest .
-        - docker image prune -f || true
+        - docker image pull alpine:3.20
       start: |
         docker rm -f fanout 2>/dev/null || true
         docker volume create fanout-data >/dev/null
@@ -12,10 +22,12 @@ zerops:
           --privileged \
           --network=host \
           -v fanout-data:/var/lib/fanout \
+          -v /var/www/fanout:/usr/local/bin/fanout:ro \
+          -v /var/www/docker-entrypoint.sh:/usr/local/bin/docker-entrypoint.sh:ro \
           -e WEB_PORT=8899 \
           -e WORK_DIR=/var/lib/fanout \
           -e MAX_SLOTS=20 \
-          fanout-zerops:latest
+          alpine:3.20 sh -c 'apk add --no-cache bash ca-certificates curl iproute2 iptables openvpn >/dev/null && chmod +x /usr/local/bin/fanout /usr/local/bin/docker-entrypoint.sh && exec /usr/local/bin/docker-entrypoint.sh'
       ports:
         - port: 8899
           httpSupport: true

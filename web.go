@@ -34,8 +34,16 @@ button{font:inherit;color:var(--text);background:#222833;border:1px solid var(--
 button:hover{border-color:var(--accent)}
 button:disabled{opacity:.45;cursor:default}
 button.primary{background:var(--accent);border-color:var(--accent);color:#0b0e12;font-weight:600}
+.litebar{display:grid;grid-template-columns:auto minmax(170px,260px) auto auto 1fr;
+  gap:8px;align-items:center;padding:8px 16px;border-bottom:1px solid var(--line);
+  background:#10141a}
+.litebar b{font-weight:600}
+.litebar code{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  color:var(--dim);background:#0e1116;border:1px solid var(--line);border-radius:4px;padding:4px 8px}
+.litebar .ok{color:var(--ok)}
+.litebar .bad{color:var(--bad)}
 .wrap{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--line);
-  height:calc(100vh - 41px)}
+  height:calc(100vh - 86px)}
 section{background:var(--bg);display:flex;flex-direction:column;min-height:0}
 .head{display:flex;align-items:center;gap:10px;padding:8px 12px;
   border-bottom:1px solid var(--line);background:var(--panel)}
@@ -65,7 +73,7 @@ input[type=search]:focus{outline:none;border-color:var(--accent)}
 .links a{color:var(--dim);text-decoration:none;font-size:12px}
 .links a:hover{color:var(--accent)}
 @media(max-width:760px){.links{display:none}}
-@media(max-width:860px){.wrap{grid-template-columns:1fr;height:auto}}
+@media(max-width:860px){.wrap{grid-template-columns:1fr;height:auto}.litebar{grid-template-columns:1fr}.litebar code{white-space:normal}}
 select{font:inherit;background:#0e1116;border:1px solid var(--line);color:var(--text);
   border-radius:4px;padding:3px 6px;max-width:150px}
 select:focus{outline:none;border-color:var(--accent)}
@@ -103,6 +111,16 @@ a.lnk:hover{color:var(--accent);border-color:var(--accent)}
   </nav>
   <button id="refresh">重新拉取节点</button>
 </header>
+
+<div class="litebar">
+  <b>轻量 Xray</b>
+  <select id="liteOutbound">
+    <option value="direct">直连 direct</option>
+  </select>
+  <button class="primary" id="liteApply">应用出站</button>
+  <button id="liteCopy">复制节点</button>
+  <code id="liteLink">读取中...</code>
+</div>
 
 <div class="wrap">
   <section>
@@ -198,6 +216,7 @@ let nodes = [], tunnels = [];
 const picked = new Set();
 let tplId = 0;
 const ipicked = new Set();
+let lite = null;
 
 // 界面挂在随机前缀下，请求一律走相对路径，去掉开头的斜杠即可
 async function api(path, opts){
@@ -266,6 +285,7 @@ async function poll(){
   try{
     tunnels = await api('/api/tunnels') || [];
     renderTunnels(); renderNodes();
+    renderLite();
     if(inbounds.length) renderInbounds();
   }catch(e){}
 }
@@ -275,6 +295,69 @@ async function loadNodes(){
   nodes = d.nodes || [];
   renderNodes();
 }
+
+async function loadLite(){
+  try{
+    lite = await api('/api/lite');
+    renderLite();
+  }catch(e){
+    $('#liteLink').textContent = '轻量 Xray 状态读取失败: ' + e.message;
+  }
+}
+
+function renderLite(){
+  if(!$('#liteOutbound')) return;
+  const sel = $('#liteOutbound');
+  const old = sel.value;
+  const up = tunnels.filter(t => t.status === 'up');
+  const current = lite && lite.outbound
+    ? (lite.outbound.mode === 'socks' ? 'socks:' + lite.outbound.port : 'direct')
+    : old;
+  const opts = ['<option value="direct">直连 direct</option>'].concat(
+    up.map(t => '<option value="socks:'+t.port+'">SOCKS '+t.port+' · '
+      + esc(t.exit_ip || t.node.hostname) + '</option>')
+  );
+  if(current && current !== 'direct' && !opts.some(o => o.includes('value="'+current+'"'))){
+    opts.push('<option value="'+esc(current)+'">'+esc(current)+'（未运行）</option>');
+  }
+  sel.innerHTML = opts.join('');
+  sel.value = current || 'direct';
+
+  const running = lite && lite.running;
+  const mode = lite && lite.outbound
+    ? (lite.outbound.mode === 'socks' ? 'SOCKS ' + lite.outbound.port : 'direct')
+    : 'unknown';
+  $('#liteLink').innerHTML = (running ? '<span class="ok">运行中</span>' : '<span class="bad">未运行</span>')
+    + ' · 当前出站 ' + esc(mode)
+    + (lite && lite.error ? ' · ' + esc(lite.error) : '')
+    + (lite && lite.share ? ' · ' + esc(lite.share) : '');
+}
+
+$('#liteApply').onclick = async e => {
+  const v = $('#liteOutbound').value;
+  e.target.disabled = true; e.target.textContent = '应用中';
+  try{
+    if(v.startsWith('socks:')){
+      await api('/api/lite/outbound?mode=socks&port=' + encodeURIComponent(v.slice(6)), {method:'POST'});
+    }else{
+      await api('/api/lite/outbound?mode=direct', {method:'POST'});
+    }
+    await loadLite();
+  }catch(err){ alert('切换出站失败: ' + err.message); }
+  e.target.disabled = false; e.target.textContent = '应用出站';
+};
+
+$('#liteCopy').onclick = async e => {
+  if(!lite || !lite.share){ await loadLite(); }
+  if(!lite || !lite.share){ alert('还没有节点链接'); return; }
+  try{
+    await navigator.clipboard.writeText(lite.share);
+    e.target.textContent = '已复制';
+    setTimeout(() => { e.target.textContent = '复制节点'; }, 1200);
+  }catch(err){
+    prompt('复制失败，手动复制：', lite.share);
+  }
+};
 
 document.addEventListener('click', async e => {
   const start = e.target.dataset.start, stop = e.target.dataset.stop;
@@ -538,7 +621,9 @@ function updatePickCount(){
 loadNodes().catch(()=>{});
 poll();
 checkXui();
+loadLite();
 setInterval(poll, 3000);
+setInterval(loadLite, 10000);
 </script>
 </body>
 </html>`

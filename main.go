@@ -57,11 +57,21 @@ func main() {
 
 	go mgr.WatchHealth()
 
+	lite, err := NewLiteXray(*workDir)
+	if err != nil {
+		log.Printf("初始化轻量 Xray 失败: %v", err)
+	} else if err := lite.Start(); err != nil {
+		log.Printf("启动轻量 Xray 失败（Web 面板仍可用）: %v", err)
+	}
+
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
 		<-stop
 		log.Println("正在清理所有隧道...")
+		if lite != nil {
+			lite.Stop()
+		}
 		mgr.Shutdown()
 		os.Exit(0)
 	}()
@@ -79,6 +89,10 @@ func main() {
 	mux.HandleFunc("/api/xui/clone", apiXUIClone(mgr))
 	mux.HandleFunc("/api/xui/detail", apiXUIDetail)
 	mux.HandleFunc("/api/xui/links", apiXUILinks)
+	if lite != nil {
+		mux.HandleFunc("/api/lite", apiLiteStatus(lite))
+		mux.HandleFunc("/api/lite/outbound", apiLiteOutbound(lite, mgr))
+	}
 
 	auth, created, err := NewAuth(*workDir)
 	if err != nil {
@@ -98,8 +112,13 @@ func main() {
 
 	addr := fmt.Sprintf(":%d", *webPort)
 	log.Printf("管理界面: http://<本机IP>%s%s/", addr, basePath)
+	log.Printf("轻量 Xray 节点路径: %s", liteXrayPath)
 	log.Printf("SOCKS5 端口在 %d-%d 之间随机分配", randPortMin, randPortMax-1)
-	if err := http.ListenAndServe(addr, StripBasePath(basePath, auth.Wrap(mux))); err != nil {
+	root := http.NewServeMux()
+	root.Handle(liteXrayPath, liteXrayProxy())
+	root.Handle(liteXrayPath+"/", liteXrayProxy())
+	root.Handle("/", StripBasePath(basePath, auth.Wrap(mux)))
+	if err := http.ListenAndServe(addr, root); err != nil {
 		log.Fatal(err)
 	}
 }
@@ -199,17 +218,17 @@ func apiXUIStatus(w http.ResponseWriter, r *http.Request) {
 // apiXUIInbounds 列出面板里已有的入站及其绑定状态。
 func apiXUIInbounds(m *Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-	x, err := DetectXUI()
-	if err != nil {
-		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
-		return
-	}
-	list, err := x.Inbounds(liveHosts(m))
-	if err != nil {
-		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
-		return
-	}
-	writeJSON(w, http.StatusOK, list)
+		x, err := DetectXUI()
+		if err != nil {
+			writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
+			return
+		}
+		list, err := x.Inbounds(liveHosts(m))
+		if err != nil {
+			writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusOK, list)
 	}
 }
 

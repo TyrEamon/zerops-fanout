@@ -306,11 +306,13 @@ func (x *LiteXray) writeConfigLocked() error {
 }
 
 func (x *LiteXray) shareLinkLocked(r *http.Request) string {
-	host := firstHeader(r, "X-Forwarded-Host")
+	host := publicHostFromEnv()
 	if host == "" {
-		host = r.Host
+		host = firstHeader(r, "X-Forwarded-Host")
+		if host == "" {
+			host = r.Host
+		}
 	}
-	host = strings.TrimSpace(strings.Split(host, ",")[0])
 	if h, _, err := net.SplitHostPort(host); err == nil {
 		host = h
 	}
@@ -339,6 +341,18 @@ func (x *LiteXray) shareLinkLocked(r *http.Request) string {
 		values.Encode(),
 		url.QueryEscape("Zerops-fanout"),
 	)
+}
+
+func publicHostFromEnv() string {
+	for _, key := range []string{"PUBLIC_HOST", "ARGO_DOMAIN"} {
+		if v := strings.TrimSpace(os.Getenv(key)); v != "" {
+			v = strings.TrimSpace(strings.Split(v, ",")[0])
+			v = strings.TrimPrefix(strings.TrimPrefix(v, "https://"), "http://")
+			v = strings.Split(v, "/")[0]
+			return v
+		}
+	}
+	return ""
 }
 
 func firstHeader(r *http.Request, name string) string {

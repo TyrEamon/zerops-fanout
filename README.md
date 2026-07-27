@@ -76,6 +76,59 @@ FANOUT_BASEPATH=fanout
 XRAY_UUID=your-fixed-vless-uuid
 ```
 
+## Optional Cloudflare Tunnel / Argo
+
+This deployment can also start `cloudflared` inside the same runtime container.
+
+Argo is useful here because the public client only needs HTTP/WebSocket traffic:
+
+```text
+Cloudflare Tunnel -> http://localhost:8899 -> /vless -> local Xray
+```
+
+It exposes:
+
+- fanout Web UI, for example `/fanout/`
+- lightweight Xray `VLESS + WebSocket`, path `/vless`
+
+It does not expose raw SOCKS5 ports `20000-20019` as public TCP ports. That is fine for lightweight Xray mode, because Xray connects to those SOCKS5 ports locally through `127.0.0.1`.
+
+### Quick Tunnel
+
+For a temporary `trycloudflare.com` domain:
+
+```text
+ARGO_ENABLED=true
+```
+
+After deploy, read the generated temporary domain:
+
+```bash
+docker exec fanout sh -c 'grep -Eo "https://[-a-z0-9]+\\.trycloudflare\\.com" /var/lib/fanout/cloudflared/cloudflared.log | tail -1'
+```
+
+Then open the temporary domain with your UI base path and copy the node from the top bar.
+
+### Fixed Tunnel
+
+For a Cloudflare Tunnel token:
+
+```text
+ARGO_AUTH=your-cloudflare-tunnel-token
+ARGO_DOMAIN=your.domain.com
+PUBLIC_HOST=your.domain.com
+```
+
+For a credentials JSON tunnel:
+
+```text
+ARGO_AUTH={"AccountTag":"...","TunnelSecret":"...","TunnelID":"..."}
+ARGO_DOMAIN=your.domain.com
+PUBLIC_HOST=your.domain.com
+```
+
+`PUBLIC_HOST` is optional when you always open the UI through the Argo domain, but setting it makes copied VLESS links prefer that host.
+
 ## Notes
 
 - Requires Zerops Docker service, not Node.js/Golang runtime service.

@@ -21,6 +21,53 @@ if [ -n "${FANOUT_BASEPATH:-}" ]; then
   esac
 fi
 
+start_cloudflared() {
+  if [ "${ARGO_ENABLED:-}" != "true" ] && [ -z "${ARGO_AUTH:-}" ]; then
+    return 0
+  fi
+
+  argo_port="${ARGO_PORT:-${WEB_PORT}}"
+  argo_dir="${WORK_DIR}/cloudflared"
+  argo_domain="$(printf '%s' "${ARGO_DOMAIN:-}" | sed 's#^https://##; s#^http://##; s#/.*$##')"
+  mkdir -p "${argo_dir}"
+
+  echo "cloudflared starting"
+  echo "argo port: ${argo_port}"
+  if [ -n "${argo_domain}" ]; then
+    echo "argo domain: ${argo_domain}"
+  fi
+
+  if [ -n "${ARGO_AUTH:-}" ]; then
+    if printf '%s' "${ARGO_AUTH}" | grep -q "TunnelSecret"; then
+      if [ -z "${argo_domain}" ]; then
+        echo "ARGO_DOMAIN is required when ARGO_AUTH is a credentials JSON"
+        return 0
+      fi
+      printf '%s' "${ARGO_AUTH}" > "${argo_dir}/tunnel.json"
+      tunnel_id="${ARGO_TUNNEL_ID:-}"
+      if [ -z "${tunnel_id}" ]; then
+        tunnel_id="$(printf '%s' "${ARGO_AUTH}" | sed -n 's/.*"TunnelID"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
+      fi
+      cat > "${argo_dir}/config.yml" <<EOF
+tunnel: ${tunnel_id}
+credentials-file: ${argo_dir}/tunnel.json
+protocol: http2
+ingress:
+  - hostname: ${argo_domain}
+    service: http://localhost:${argo_port}
+  - service: http_status:404
+EOF
+      cloudflared tunnel --edge-ip-version auto --no-autoupdate --config "${argo_dir}/config.yml" run >"${argo_dir}/cloudflared.log" 2>&1 &
+    else
+      cloudflared tunnel --edge-ip-version auto --no-autoupdate --protocol http2 run --token "${ARGO_AUTH}" >"${argo_dir}/cloudflared.log" 2>&1 &
+    fi
+  else
+    cloudflared tunnel --edge-ip-version auto --no-autoupdate --protocol http2 --url "http://localhost:${argo_port}" --logfile "${argo_dir}/cloudflared.log" --loglevel info >/dev/null 2>&1 &
+  fi
+}
+
+start_cloudflared
+
 echo "fanout starting"
 echo "web: ${WEB_PORT}"
 echo "work dir: ${WORK_DIR}"

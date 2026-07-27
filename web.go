@@ -217,6 +217,7 @@ const picked = new Set();
 let tplId = 0;
 const ipicked = new Set();
 let lite = null;
+let liteDirty = false;
 
 // 界面挂在随机前缀下，请求一律走相对路径，去掉开头的斜杠即可
 async function api(path, opts){
@@ -310,9 +311,10 @@ function renderLite(){
   const sel = $('#liteOutbound');
   const old = sel.value;
   const up = tunnels.filter(t => t.status === 'up');
-  const current = lite && lite.outbound
+  const applied = lite && lite.outbound
     ? (lite.outbound.mode === 'socks' ? 'socks:' + lite.outbound.port : 'direct')
     : old;
+  const current = liteDirty ? old : applied;
   const opts = ['<option value="direct">直连 direct</option>'].concat(
     up.map(t => '<option value="socks:'+t.port+'">SOCKS '+t.port+' · '
       + esc(t.exit_ip || t.node.hostname) + '</option>')
@@ -329,9 +331,15 @@ function renderLite(){
     : 'unknown';
   $('#liteLink').innerHTML = (running ? '<span class="ok">运行中</span>' : '<span class="bad">未运行</span>')
     + ' · 当前出站 ' + esc(mode)
+    + (liteDirty ? ' · <span class="dim">有未应用选择</span>' : '')
     + (lite && lite.error ? ' · ' + esc(lite.error) : '')
     + (lite && lite.share ? ' · ' + esc(lite.share) : '');
 }
+
+$('#liteOutbound').onchange = () => {
+  liteDirty = true;
+  renderLite();
+};
 
 $('#liteApply').onclick = async e => {
   const v = $('#liteOutbound').value;
@@ -342,6 +350,7 @@ $('#liteApply').onclick = async e => {
     }else{
       await api('/api/lite/outbound?mode=direct', {method:'POST'});
     }
+    liteDirty = false;
     await loadLite();
   }catch(err){ alert('切换出站失败: ' + err.message); }
   e.target.disabled = false; e.target.textContent = '应用出站';

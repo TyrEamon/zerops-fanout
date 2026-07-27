@@ -333,6 +333,9 @@ func (x *LiteXray) shareLinkLocked(r *http.Request) string {
 	values.Set("security", security)
 	values.Set("type", "ws")
 	values.Set("host", host)
+	if security == "tls" {
+		values.Set("sni", host)
+	}
 	values.Set("path", liteXrayPath)
 	return fmt.Sprintf("vless://%s@%s:%s?%s#%s",
 		x.uuid,

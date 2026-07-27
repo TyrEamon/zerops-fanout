@@ -218,6 +218,7 @@ let tplId = 0;
 const ipicked = new Set();
 let lite = null;
 let liteDirty = false;
+let liteApplying = false;
 
 // 界面挂在随机前缀下，请求一律走相对路径，去掉开头的斜杠即可
 async function api(path, opts){
@@ -326,11 +327,17 @@ function renderLite(){
   sel.value = current || 'direct';
 
   const running = lite && lite.running;
+  const cooling = lite && lite.cooldown_ms > 0;
   const mode = lite && lite.outbound
     ? (lite.outbound.mode === 'socks' ? 'SOCKS ' + lite.outbound.port : 'direct')
     : 'unknown';
+  $('#liteApply').disabled = liteApplying || cooling;
+  $('#liteApply').textContent = liteApplying
+    ? '应用中'
+    : (cooling ? '冷却中 ' + Math.ceil(lite.cooldown_ms / 1000) + 's' : '应用出站');
   $('#liteLink').innerHTML = (running ? '<span class="ok">运行中</span>' : '<span class="bad">未运行</span>')
     + ' · 当前出站 ' + esc(mode)
+    + (cooling ? ' · <span class="dim">切换冷却中</span>' : '')
     + (liteDirty ? ' · <span class="dim">有未应用选择</span>' : '')
     + (lite && lite.error ? ' · ' + esc(lite.error) : '')
     + (lite && lite.share ? ' · ' + esc(lite.share) : '');
@@ -342,8 +349,10 @@ $('#liteOutbound').onchange = () => {
 };
 
 $('#liteApply').onclick = async e => {
+  if(liteApplying) return;
   const v = $('#liteOutbound').value;
-  e.target.disabled = true; e.target.textContent = '应用中';
+  liteApplying = true;
+  renderLite();
   try{
     if(v.startsWith('socks:')){
       await api('/api/lite/outbound?mode=socks&port=' + encodeURIComponent(v.slice(6)), {method:'POST'});
@@ -353,7 +362,8 @@ $('#liteApply').onclick = async e => {
     liteDirty = false;
     await loadLite();
   }catch(err){ alert('切换出站失败: ' + err.message); }
-  e.target.disabled = false; e.target.textContent = '应用出站';
+  liteApplying = false;
+  renderLite();
 };
 
 $('#liteCopy').onclick = async e => {

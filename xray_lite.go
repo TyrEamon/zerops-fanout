@@ -25,6 +25,7 @@ const (
 	liteXrayListen = "127.0.0.1"
 	liteXrayPort   = 10000
 	liteXrayPath   = "/vless"
+	liteSwitchGap  = 3 * time.Second
 )
 
 type LiteOutbound struct {
@@ -44,6 +45,7 @@ type LiteXray struct {
 	cmd        *exec.Cmd
 	done       chan error
 	lastErr    string
+	lastSwitch time.Time
 }
 
 func NewLiteXray(workDir string) (*LiteXray, error) {
@@ -123,6 +125,10 @@ func (x *LiteXray) SetOutbound(mode string, port int) error {
 	x.mu.Lock()
 	defer x.mu.Unlock()
 
+	if remaining := x.switchCooldownLocked(); remaining > 0 {
+		return fmt.Errorf("切换太快了，请 %.1f 秒后再试", remaining.Seconds())
+	}
+
 	if mode != "socks" {
 		x.outbound = LiteOutbound{Mode: "direct"}
 	} else {
@@ -135,7 +141,11 @@ func (x *LiteXray) SetOutbound(mode string, port int) error {
 	if err := os.WriteFile(x.statePath, append(b, '\n'), 0600); err != nil {
 		return err
 	}
-	return x.restartLocked()
+	if err := x.restartLocked(); err != nil {
+		return err
+	}
+	x.lastSwitch = time.Now()
+	return nil
 }
 
 func (x *LiteXray) Status(r *http.Request) map[string]any {
@@ -153,8 +163,20 @@ func (x *LiteXray) Status(r *http.Request) map[string]any {
 			"mode": x.outbound.Mode,
 			"port": x.outbound.Port,
 		},
-		"share": x.shareLinkLocked(r),
+		"cooldown_ms": int(x.switchCooldownLocked() / time.Millisecond),
+		"share":       x.shareLinkLocked(r),
 	}
+}
+
+func (x *LiteXray) switchCooldownLocked() time.Duration {
+	if x.lastSwitch.IsZero() {
+		return 0
+	}
+	remaining := liteSwitchGap - time.Since(x.lastSwitch)
+	if remaining > 0 {
+		return remaining
+	}
+	return 0
 }
 
 func (x *LiteXray) restartLocked() error {

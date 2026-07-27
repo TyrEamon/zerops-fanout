@@ -306,7 +306,7 @@ func (x *LiteXray) writeConfigLocked() error {
 }
 
 func (x *LiteXray) shareLinkLocked(r *http.Request) string {
-	host := publicHostFromEnv()
+	host, preferTLS := publicHostFromEnv()
 	if host == "" {
 		host = firstHeader(r, "X-Forwarded-Host")
 		if host == "" {
@@ -323,7 +323,7 @@ func (x *LiteXray) shareLinkLocked(r *http.Request) string {
 	proto := firstHeader(r, "X-Forwarded-Proto")
 	port := "443"
 	security := "tls"
-	if proto == "http" {
+	if !preferTLS && proto == "http" {
 		port = "80"
 		security = "none"
 	}
@@ -343,16 +343,17 @@ func (x *LiteXray) shareLinkLocked(r *http.Request) string {
 	)
 }
 
-func publicHostFromEnv() string {
+func publicHostFromEnv() (string, bool) {
 	for _, key := range []string{"PUBLIC_HOST", "ARGO_DOMAIN"} {
 		if v := strings.TrimSpace(os.Getenv(key)); v != "" {
+			secure := !strings.HasPrefix(v, "http://")
 			v = strings.TrimSpace(strings.Split(v, ",")[0])
 			v = strings.TrimPrefix(strings.TrimPrefix(v, "https://"), "http://")
 			v = strings.Split(v, "/")[0]
-			return v
+			return v, secure
 		}
 	}
-	return ""
+	return "", false
 }
 
 func firstHeader(r *http.Request, name string) string {

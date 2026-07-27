@@ -129,6 +129,26 @@ PUBLIC_HOST=your.domain.com
 
 `PUBLIC_HOST` is optional when you always open the UI through the Argo domain, but setting it makes copied VLESS links prefer that host.
 
+###CMD
+- (1)
+```bash
+docker ps -a
+docker logs fanout --tail 120
+```
+- (2)
+```bash
+docker exec fanout sh -c 'ls -lah /var/lib/fanout/cloudflared 2>/dev/null; cat /var/lib/fanout/cloudflared/cloudflared.log 2>/dev/null | tail -80'
+```
+- (3)
+```bash
+docker exec fanout sh -c 'grep -Eo "https://[-a-z0-9]+\.trycloudflare\.com" /var/lib/fanout/cloudflared/cloudflared.log | tail -1'
+```
+- (4)
+```bash
+docker exec fanout sh -c 'echo 路径=$(cat /var/lib/fanout/basepath); echo 密码=$(cat /var/lib/fanout/password); echo UUID=$(cat /var/lib/fanout/xray/uuid)'
+```
+
+
 ## Notes
 
 - Requires Zerops Docker service, not Node.js/Golang runtime service.
